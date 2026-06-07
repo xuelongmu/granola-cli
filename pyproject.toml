@@ -24,3 +24,8 @@ packages = ["granola"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "granola/granola-api-routes.json" = "granola/granola-api-routes.json"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

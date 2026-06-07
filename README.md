@@ -86,6 +86,10 @@ allow it. The macOS crypto is verified against
 [harperreed/muesli](https://github.com/harperreed/muesli)'s known-good vectors
 (`tests/test_macos_crypto.py`).
 
+The macOS path is not just theoretical: `granola --no-refresh info`,
+`granola --no-refresh token`, and a live `granola --no-refresh notes --limit 1`
+smoke test have been verified against a local Granola profile on macOS.
+
 ## Layout
 
 ```
