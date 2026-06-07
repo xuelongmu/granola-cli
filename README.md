@@ -5,7 +5,7 @@ on-disk session, no API key, no password prompt. It covers two things:
 
 1. **Credentials** — decrypt the on-disk chain (Windows DPAPI / macOS Keychain → DEK →
    cred file), auto-**refresh** the token (single-use rotation, with safe write-back),
-   print/export it.
+   print it, or export a portable **session file** for headless/Linux use.
 2. **The documented internal API** for a note — read, share, edit — plus a generic
    `call` for any of the ~392 internal endpoints.
 
@@ -17,7 +17,7 @@ on-disk session, no API key, no password prompt. It covers two things:
 
 ```powershell
 uv tool install .          # or: pipx install .
-granola info
+granola auth status
 ```
 
 Requires Python ≥ 3.10. Dependencies: `httpx`, `cryptography`.
@@ -25,10 +25,11 @@ Requires Python ≥ 3.10. Dependencies: `httpx`, `cryptography`.
 ## Usage
 
 ```text
-# credentials / engine
-granola info                         # token status (no secrets)
-granola token                        # print a valid access token
-granola export creds.json --refresh  # SECRET dump of decrypted credentials
+# auth / engine
+granola auth status                  # token status (no secrets; --include-secrets to show)
+granola auth token                   # print a valid access token
+granola auth refresh                 # force-refresh the selected source
+granola auth export session.json     # write a portable, refreshable session file (0600)
 granola routes [filter]              # endpoint name -> URL map
 granola call <endpoint> --body '{"limit":5}'   # any endpoint, raw
 
@@ -59,6 +60,48 @@ Roles: `owner` · `collaborator` · `viewer`.
 See [`docs/api-gotchas.md`](docs/api-gotchas.md) for endpoint quirks baked into the
 typed verbs.
 
+## Headless / portable sessions
+
+Credential decrypt needs the Keychain (macOS) or DPAPI (Windows), so it only runs on
+the machine you signed in on. To drive the API from a headless Linux box or CI, export
+a **session file** once and carry it over:
+
+```bash
+# On your macOS/Windows machine (where Granola is signed in):
+granola auth export ~/session.json     # minimal, refreshable, written 0600
+
+# Sign OUT of the Granola desktop app, so only this session holds the refresh token.
+# (Desktop + session sharing one single-use refresh token will fight and log each
+#  other out on rotation.)
+
+# On the headless box:
+export GRANOLA_SESSION=~/session.json
+granola notes --limit 20               # refreshes + writes back to the file in place
+```
+
+Every command takes global auth options (before the command) that pick the token source:
+
+```text
+--email EMAIL          select an account from local desktop credentials
+--session PATH         use a refreshable session file
+--access-token TOKEN   use this bearer token directly (no refresh)
+--no-refresh           never auto-refresh
+```
+
+Environment equivalents: `GRANOLA_SESSION`, `GRANOLA_ACCESS_TOKEN`.
+
+**Precedence:** a refreshable session (`--session` / `GRANOLA_SESSION`) beats a static
+token (`--access-token` / `GRANOLA_ACCESS_TOKEN`); a flag beats its env var; the desktop
+store is the fallback. If both a static token and a session are set, the session wins and
+the CLI warns — a static token can't refresh and would silently go stale.
+
+Use `--access-token` (or `granola auth export --no-refresh-token`) for short-lived CI where
+you don't want a long-lived rotating secret on the box.
+
+If a session's refresh token ever dies (the desktop rotated it, or it was revoked), you
+can't re-bootstrap headlessly — re-run `granola auth export` on your macOS/Windows machine
+and copy the file over.
+
 ## Platforms
 
 | | Windows | macOS |
@@ -79,7 +122,10 @@ allow it. The macOS crypto is verified against
 
 ```
 granola/
-  config, crypto, _http, store, auth, routes, client, export   # engine: decrypt + refresh + call
+  config, crypto, _http, store        # engine: decrypt the on-disk cred chain
+  auth.py       token primitives: refresh exchange, expiry, status (persistence-free)
+  sources.py    token sources (desktop / session-file / static) + precedence
+  routes, client                      # endpoint resolution + API client
   notes.py      read ops (list/get/meta/transcript/panels)
   sharing.py    collaborators (who/share/unshare/role/share-folder)
   editing.py    update-document / hard-delete

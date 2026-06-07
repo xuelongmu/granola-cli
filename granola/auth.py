@@ -1,14 +1,27 @@
-"""Token status, refresh (redirect-safe, with write-back), and access-token retrieval."""
+"""Token primitives: the refresh HTTP exchange, expiry math, account selection,
+and status formatting.
+
+These are deliberately persistence-free. *Where* a refreshed token gets written
+back (the encrypted desktop store vs. a portable session file) lives in
+``sources.py`` — this module only knows how to talk to the refresh endpoint and
+how to reason about a token dict.
+"""
 from __future__ import annotations
 
 import json
-import sys
 import time
 from datetime import datetime, timezone
 
-from ._http import base_headers, granola_running, request
+from ._http import base_headers, request
 from .config import Config
-from .store import compact, read_store, save_store
+
+
+class RefreshRevoked(RuntimeError):
+    """The refresh token was rejected (revoked or already rotated away).
+
+    Carries a source-specific, human-readable recovery message — the desktop and
+    session sources re-raise it with the right re-auth instructions.
+    """
 
 
 def _now_ms() -> int:
@@ -29,11 +42,15 @@ def select_account(store, email: str | None = None):
     return store.accounts[0]
 
 
-def refresh_account_token(cfg: Config, account: dict) -> bool:
-    """Refresh one account's tokens in place. Returns True on success."""
-    tok = json.loads(account["tokens"])
+def refresh_exchange(cfg: Config, tok: dict) -> dict:
+    """POST the refresh token and return a *new* token dict. Pure — no write-back.
+
+    Raises ``RefreshRevoked`` on 401 (revoked/rotated) and ``RuntimeError`` on any
+    other non-2xx. The returned dict is a copy of ``tok`` with the rotated fields
+    applied, so callers decide where to persist it.
+    """
     if not tok.get("refresh_token"):
-        raise ValueError(f"Account {account.get('email')} has no refresh_token.")
+        raise ValueError("No refresh_token available to refresh.")
 
     headers = base_headers(cfg, tok["access_token"])
     resp = request("POST", cfg.refresh_url,
@@ -46,10 +63,7 @@ def refresh_account_token(cfg: Config, account: dict) -> bool:
             kind = resp.json().get("error")
         except Exception:
             pass
-        raise RuntimeError(
-            f"Refresh rejected (401{': ' + kind if kind else ''}). "
-            "Refresh token revoked - sign in via the Granola app."
-        )
+        raise RefreshRevoked(f"Refresh rejected (401{': ' + kind if kind else ''}).")
     if resp.status_code >= 400:
         raise RuntimeError(f"Refresh failed: HTTP {resp.status_code}. {resp.text[:300]}")
 
@@ -57,63 +71,34 @@ def refresh_account_token(cfg: Config, account: dict) -> bool:
     if not data.get("access_token"):
         raise RuntimeError("Refresh OK but no access_token in response.")
 
-    tok["access_token"] = data["access_token"]
-    tok["expires_in"] = data["expires_in"]
+    new = dict(tok)
+    new["access_token"] = data["access_token"]
+    new["expires_in"] = data.get("expires_in", tok.get("expires_in"))
     for key in ("refresh_token", "token_type", "session_id", "sign_in_method"):
         if data.get(key):
-            tok[key] = data[key]
-    tok["obtained_at"] = _now_ms()
-
-    account["tokens"] = compact(tok)
-    account["savedAt"] = tok["obtained_at"]
-    return True
+            new[key] = data[key]
+    new["obtained_at"] = _now_ms()
+    return new
 
 
-def get_access_token(cfg: Config, email: str | None = None, no_refresh: bool = False,
-                     force: bool = False, passthru: bool = False):
-    """Return a valid access token, auto-refreshing + writing back if expiring."""
-    store = read_store(cfg)
-    acct = select_account(store, email)
-    tok = json.loads(acct["tokens"])
-
-    if not no_refresh and (force or token_is_expiring(tok, cfg.refresh_skew_ms)):
-        if granola_running():
-            print(
-                "warning: Granola desktop app is running; refresh tokens rotate "
-                "(single-use). Quit Granola or use a separate session to avoid logout.",
-                file=sys.stderr,
-            )
-        if refresh_account_token(cfg, acct):
-            save_store(store)
-            tok = json.loads(acct["tokens"])
-
-    return tok if passthru else tok["access_token"]
-
-
-def token_info(cfg: Config, include_secrets: bool = False) -> list[dict]:
-    store = read_store(cfg)
-    out = []
-    for acct in store.accounts:
-        tok = json.loads(acct["tokens"])
-        obt_ms = int(tok["obtained_at"])
-        obtained = datetime.fromtimestamp(obt_ms / 1000, tz=timezone.utc)
-        expiry = datetime.fromtimestamp(
-            (obt_ms + int(tok["expires_in"]) * 1000) / 1000, tz=timezone.utc
-        )
-        now = datetime.now(timezone.utc)
-        info = {
-            "email": acct.get("email"),
-            "userId": acct.get("userId"),
-            "token_type": tok.get("token_type"),
-            "sign_in_method": tok.get("sign_in_method"),
-            "obtained_at_utc": obtained.isoformat(),
-            "expiry_utc": expiry.isoformat(),
-            "expired": now > expiry,
-            "expiring_soon": token_is_expiring(tok, cfg.refresh_skew_ms),
-            "minutes_left": round((expiry - now).total_seconds() / 60, 1),
-        }
-        if include_secrets:
-            info["access_token"] = tok.get("access_token")
-            info["refresh_token"] = tok.get("refresh_token")
-        out.append(info)
-    return out
+def format_token_status(tok: dict, skew_ms: int, include_secrets: bool = False) -> dict:
+    """A no-secrets status view of one token dict (secrets gated behind the flag)."""
+    obt_ms = int(tok["obtained_at"])
+    obtained = datetime.fromtimestamp(obt_ms / 1000, tz=timezone.utc)
+    expiry = datetime.fromtimestamp(
+        (obt_ms + int(tok["expires_in"]) * 1000) / 1000, tz=timezone.utc
+    )
+    now = datetime.now(timezone.utc)
+    info = {
+        "token_type": tok.get("token_type"),
+        "sign_in_method": tok.get("sign_in_method"),
+        "obtained_at_utc": obtained.isoformat(),
+        "expiry_utc": expiry.isoformat(),
+        "expired": now > expiry,
+        "expiring_soon": token_is_expiring(tok, skew_ms),
+        "minutes_left": round((expiry - now).total_seconds() / 60, 1),
+    }
+    if include_secrets:
+        info["access_token"] = tok.get("access_token")
+        info["refresh_token"] = tok.get("refresh_token")
+    return info

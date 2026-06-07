@@ -7,31 +7,54 @@ Quick start::
     me = client.invoke("get-user-info")
     recent = notes.list_notes(client, limit=10)
     sharing.add_collaborator(client, "<doc-id>", "person@example.com", name="Person")
+
+Headless / portable auth::
+
+    from granola import GranolaClient, SessionFileSource, Config
+    cfg = Config()
+    client = GranolaClient(cfg, source=SessionFileSource(cfg, "session.json"))
 """
 from __future__ import annotations
 
 from . import editing, notes, sharing
-from .auth import get_access_token, refresh_account_token, token_info, token_is_expiring
+from .auth import (
+    RefreshRevoked,
+    format_token_status,
+    refresh_exchange,
+    token_is_expiring,
+)
 from .client import GranolaClient
 from .config import Config
-from .export import export_credentials
 from .routes import load_routes, resolve_endpoint
+from .sources import (
+    DesktopStoreSource,
+    SessionFileSource,
+    StaticTokenSource,
+    TokenSource,
+    create_session_file,
+    resolve_source,
+)
 from .store import get_dek, read_store, save_store
 
 __version__ = "0.1.0"
 __all__ = [
     "Config",
     "GranolaClient",
-    "get_access_token",
-    "token_info",
+    "TokenSource",
+    "DesktopStoreSource",
+    "SessionFileSource",
+    "StaticTokenSource",
+    "resolve_source",
+    "create_session_file",
+    "refresh_exchange",
+    "format_token_status",
     "token_is_expiring",
-    "refresh_account_token",
+    "RefreshRevoked",
     "load_routes",
     "resolve_endpoint",
     "read_store",
     "save_store",
     "get_dek",
-    "export_credentials",
     "notes",
     "sharing",
     "editing",

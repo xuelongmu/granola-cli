@@ -2,32 +2,35 @@
 from __future__ import annotations
 
 from ._http import base_headers, request
-from .auth import get_access_token
 from .config import Config
 from .routes import resolve_endpoint
+from .sources import DesktopStoreSource, TokenSource
 
 
 class GranolaClient:
-    """Call Granola API endpoints with an auto-refreshed bearer token.
+    """Call Granola API endpoints with a bearer token from a ``TokenSource``.
 
-    >>> c = GranolaClient()
+    The source (desktop store, session file, or static token) is resolved once and
+    handles its own refresh + write-back, so call sites stay auth-agnostic.
+
+    >>> c = GranolaClient()                       # defaults to the desktop store
     >>> c.invoke("get-user-info")
     >>> c.invoke("get-documents", body={"limit": 10})
     """
 
-    def __init__(self, cfg: Config | None = None):
+    def __init__(self, cfg: Config | None = None, source: TokenSource | None = None):
         self.cfg = cfg or Config()
+        self.source = source or DesktopStoreSource(self.cfg)
 
-    def access_token(self, **kwargs) -> str:
-        return get_access_token(self.cfg, **kwargs)
+    def access_token(self, force: bool = False) -> str:
+        return self.source.access_token(force=force)
 
     def resolve(self, endpoint: str) -> str:
         return resolve_endpoint(endpoint, self.cfg)
 
-    def invoke(self, endpoint: str, body=None, method: str = "POST", email: str | None = None,
-               no_refresh: bool = False, additional_headers: dict | None = None,
-               raw: bool = False):
-        token = get_access_token(self.cfg, email=email, no_refresh=no_refresh)
+    def invoke(self, endpoint: str, body=None, method: str = "POST",
+               additional_headers: dict | None = None, raw: bool = False):
+        token = self.source.access_token()
         url = self.resolve(endpoint)
         headers = base_headers(self.cfg, token, additional_headers)
         resp = request(method, url, json_body=body, headers=headers, timeout=self.cfg.timeout)

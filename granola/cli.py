@@ -1,22 +1,32 @@
 """`granola` — one CLI for the documented Granola API: credentials + notes + sharing + editing.
 
-Engine:   info | token | routes | call | export
+Auth:     auth status | auth token | auth refresh | auth export
+Engine:   routes | call
 Read:     notes | get | meta | transcript | panels
 Share:    who | share | unshare | role | share-folder | folder-who | unshare-folder
 Edit:     update | delete
+
+Global auth options (before the command) select the token source:
+  --email EMAIL        pick an account from the local desktop credentials
+  --session PATH       use a refreshable session file
+  --access-token TOK   use this bearer token directly (no refresh)
+  --no-refresh         never auto-refresh
+Environment: GRANOLA_SESSION, GRANOLA_ACCESS_TOKEN.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from . import editing, notes, sharing
-from .auth import get_access_token, token_info
 from .client import GranolaClient
 from .config import Config
-from .export import export_credentials
 from .routes import load_routes
+from .sources import create_session_file, resolve_source
+
+DEFAULT_SESSION_PATH = Path.home() / ".config" / "granola" / "session.json"
 
 
 def _print(obj) -> None:
@@ -26,14 +36,26 @@ def _print(obj) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="granola", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--email", help="Select a specific stored account.")
+    p.add_argument("--email", help="Select a specific stored desktop account.")
+    p.add_argument("--session", help="Use a refreshable session JSON file.")
+    p.add_argument("--access-token", help="Use this bearer token directly (no refresh).")
     p.add_argument("--no-refresh", action="store_true", help="Never auto-refresh the token.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # --- auth ---
+    pa = sub.add_parser("auth", help="Token / session management.")
+    asub = pa.add_subparsers(dest="auth_cmd", required=True)
+    pas = asub.add_parser("status", help="Token/account status (no secrets by default).")
+    pas.add_argument("--include-secrets", action="store_true")
+    asub.add_parser("token", help="Print the current valid bearer token.")
+    asub.add_parser("refresh", help="Force-refresh the selected source.")
+    pae = asub.add_parser("export", help="Write a refreshable session file from desktop creds.")
+    pae.add_argument("path", nargs="?", default=None,
+                     help=f"Destination (default: {DEFAULT_SESSION_PATH}).")
+    pae.add_argument("--no-refresh-token", action="store_true",
+                     help="Bearer-only session (cannot refresh; for short-lived/CI use).")
+
     # --- engine ---
-    pi = sub.add_parser("info", help="Token status (no secrets by default).")
-    pi.add_argument("--include-secrets", action="store_true")
-    sub.add_parser("token", help="Print a valid access token.")
     pr = sub.add_parser("routes", help="List endpoint routes (optional filter).")
     pr.add_argument("filter", nargs="?", default="")
     pc = sub.add_parser("call", help="Call any endpoint by name or URL.")
@@ -41,9 +63,6 @@ def build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--body", help='JSON body, e.g. \'{"limit":5}\'.')
     pc.add_argument("--method", default="POST")
     pc.add_argument("--raw", action="store_true")
-    pe = sub.add_parser("export", help="Dump decrypted credentials to a file (SECRET).")
-    pe.add_argument("path")
-    pe.add_argument("--refresh", action="store_true")
 
     # --- read ---
     pn = sub.add_parser("notes", help="List recent notes.")
@@ -101,24 +120,45 @@ def main(argv=None) -> int:  # noqa: C901 - flat dispatch is clearer than abstra
         pass
     args = build_parser().parse_args(argv)
     cfg = Config()
-    client = GranolaClient(cfg)
     c = args.cmd
 
+    # auth export reads the desktop store directly; it doesn't use the resolved source.
+    if c == "auth" and args.auth_cmd == "export":
+        if args.session or args.access_token:
+            print("auth export reads the desktop credential store; "
+                  "don't pass --session/--access-token.", file=sys.stderr)
+            return 2
+        dest = args.path or str(DEFAULT_SESSION_PATH)
+        out = create_session_file(cfg, dest, email=args.email,
+                                  include_refresh_token=not args.no_refresh_token)
+        mode = "owner-only" if sys.platform == "win32" else "0600"
+        kind = "bearer-only" if args.no_refresh_token else "refreshable"
+        print(f"Wrote {kind} session file: {out} (mode {mode})", file=sys.stderr)
+        print(out)
+        return 0
+
+    source = resolve_source(cfg, email=args.email, session=args.session,
+                            access_token=args.access_token, no_refresh=args.no_refresh)
+    client = GranolaClient(cfg, source=source)
+
+    # auth
+    if c == "auth":
+        if args.auth_cmd == "status":
+            _print(source.status(include_secrets=args.include_secrets))
+        elif args.auth_cmd == "token":
+            print(source.access_token())
+        elif args.auth_cmd == "refresh":
+            source.access_token(force=True)
+            _print(source.status(include_secrets=False))
+
     # engine
-    if c == "info":
-        _print(token_info(cfg, include_secrets=args.include_secrets))
-    elif c == "token":
-        print(get_access_token(cfg, email=args.email, no_refresh=args.no_refresh))
     elif c == "routes":
         for name in sorted(load_routes(cfg)):
             if args.filter in name:
                 print(f"{name:40} {load_routes(cfg)[name]}")
     elif c == "call":
         body = json.loads(args.body) if args.body else None
-        _print(client.invoke(args.endpoint, body=body, method=args.method,
-                             email=args.email, no_refresh=args.no_refresh, raw=args.raw))
-    elif c == "export":
-        print(export_credentials(cfg, args.path, refresh=args.refresh))
+        _print(client.invoke(args.endpoint, body=body, method=args.method, raw=args.raw))
 
     # read
     elif c == "notes":
