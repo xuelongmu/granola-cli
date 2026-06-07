@@ -2,7 +2,7 @@
 
 Engine:   info | token | routes | call | export
 Read:     notes | get | meta | transcript | panels
-Share:    who | share | unshare | role | share-folder
+Share:    who | share | unshare | role | share-folder | folder-who | unshare-folder
 Edit:     update | delete
 """
 from __future__ import annotations
@@ -73,12 +73,18 @@ def build_parser() -> argparse.ArgumentParser:
     prole = sub.add_parser("role", help="Change a collaborator's role.")
     prole.add_argument("id"); prole.add_argument("--user", required=True, help="user_id (from `who`).")
     prole.add_argument("--role", required=True)
-    pf = sub.add_parser("share-folder", help="Share every note in a folder with someone.")
+    pf = sub.add_parser("share-folder", help="Share a folder with someone (folder-level access).")
     pf.add_argument("folder", help="Folder id or name (e.g. NeuroSense).")
     pf.add_argument("--email", required=True); pf.add_argument("--name")
     pf.add_argument("--role", default="collaborator")
+    pf.add_argument("--per-note", action="store_true",
+                    help="Add to each note directly (invites non-Granola emails; vs one-call folder ACL).")
     pf.add_argument("--include-existing", action="store_true",
-                    help="Re-add even where the person already has access.")
+                    help="(per-note) Re-add even where the person already has access.")
+    pfw = sub.add_parser("folder-who", help="Who has access to a folder.")
+    pfw.add_argument("folder")
+    puf = sub.add_parser("unshare-folder", help="Revoke a person's folder-level access.")
+    puf.add_argument("folder"); puf.add_argument("--email", required=True)
 
     # --- edit ---
     pup = sub.add_parser("update", help="Partial-edit a note (title/markdown).")
@@ -153,7 +159,13 @@ def main(argv=None) -> int:  # noqa: C901 - flat dispatch is clearer than abstra
         _print(sharing.set_role(client, args.id, args.user, args.role))
     elif c == "share-folder":
         _print(sharing.share_folder(client, args.folder, args.email, name=args.name,
-                                    role=args.role, skip_existing=not args.include_existing))
+                                    role=args.role, per_note=args.per_note,
+                                    skip_existing=not args.include_existing))
+    elif c == "folder-who":
+        for u in sharing.list_folder_collaborators(client, args.folder):
+            print(f"{u.get('role',''):13} {u.get('email',''):35} {u.get('access_source','')}")
+    elif c == "unshare-folder":
+        _print(sharing.unshare_folder(client, args.folder, args.email))
 
     # edit
     elif c == "update":

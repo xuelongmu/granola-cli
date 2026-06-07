@@ -10,7 +10,7 @@ keywords = ["granola", "meeting-notes", "cli", "transcripts"]
 dependencies = ["httpx>=0.27", "cryptography>=42"]
 
 [project.urls]
-Homepage = "https://github.com/"  # TODO: set on first push
+Homepage = "https://github.com/xuelongmu/granola-cli"
 
 [project.scripts]
 granola = "granola.cli:main"

@@ -101,21 +101,48 @@ def set_role(client: GranolaClient, doc_id: str, user_id: str, role: str) -> dic
                          additional_headers=_ws_headers(client))
 
 
+# --- folder / list level sharing (note the inconsistent id field names per endpoint) ---
+
+def list_folder_collaborators(client: GranolaClient, folder: str) -> list[dict]:
+    """Who has access to a folder. Keyed by ``list_id`` (yes, different name)."""
+    fid = _resolve_folder(client, folder)["id"]
+    resp = client.invoke("get-users-with-access-to-list", body={"list_id": fid},
+                         additional_headers=_ws_headers(client))
+    return resp.get("users", []) if isinstance(resp, dict) else []
+
+
 def share_folder(
     client: GranolaClient,
-    list_id: str,
+    folder: str,
     email: str,
     name: str | None = None,
     role: str = "COLLABORATOR",
+    per_note: bool = False,
     skip_existing: bool = True,
 ) -> dict:
-    """Share every note in a folder with one person.
+    """Share a folder with one person. ``folder`` may be an id or a title.
 
-    Implemented as a per-note loop over the verified add path (robust), rather
-    than the single ``add-users-to-document-list-v2`` call whose body shape is
-    unverified. Returns a per-note summary.
+    Two modes:
+      * default (one call) — ``add-users-to-document-list-v2``: grants *inherited*
+        access to every note in the folder, but only adds **existing Granola
+        users** (unknown emails come back in ``emails_not_found``).
+      * ``per_note=True`` — loops the verified ``add-users-to-document`` path,
+        which *invites* new emails too and grants direct (non-inherited) access.
     """
-    doc_ids = _folder_document_ids(client, list_id)
+    lst = _resolve_folder(client, folder)
+    fid = lst["id"]
+    if not per_note:
+        res = client.invoke(
+            "add-users-to-document-list-v2",
+            body={"document_list_id": fid, "emails": [email], "role": normalize_role(role)},
+            additional_headers=_ws_headers(client),
+        )
+        res = dict(res) if isinstance(res, dict) else {"raw": res}
+        res["mode"] = "folder"
+        res["folder_id"] = fid
+        return res
+
+    doc_ids = [d["id"] for d in (lst.get("documents") or []) if not d.get("deleted_at")]
     added, skipped, failed = [], [], []
     for doc_id in doc_ids:
         try:
@@ -128,15 +155,25 @@ def share_folder(
             (added if r.get("success") else failed).append(doc_id)
         except Exception as exc:  # noqa: BLE001 - report, keep going
             failed.append({"document_id": doc_id, "error": str(exc)})
-    return {"list_id": list_id, "total": len(doc_ids),
+    return {"mode": "per-note", "folder_id": fid, "total": len(doc_ids),
             "added": added, "skipped": skipped, "failed": failed}
 
 
-def _folder_document_ids(client: GranolaClient, list_id: str) -> list[str]:
-    """Live (non-deleted) document ids in a folder, via /v2/get-document-lists."""
+def unshare_folder(client: GranolaClient, folder: str, email: str) -> dict:
+    """Revoke a person's folder-level access. Returns {success, removed_emails}."""
+    fid = _resolve_folder(client, folder)["id"]
+    return client.invoke(
+        "remove-users-from-document-list-v2",
+        body={"document_list_id": fid, "emails": [email]},
+        additional_headers=_ws_headers(client),
+    )
+
+
+def _resolve_folder(client: GranolaClient, folder: str) -> dict:
+    """Find a folder (list) dict by id or title, via /v2/get-document-lists."""
     resp = client.invoke("get-document-lists-v2", body={})
     lists = resp.get("lists", []) if isinstance(resp, dict) else []
     for lst in lists:
-        if lst.get("id") == list_id or (lst.get("title") or "").lower() == list_id.lower():
-            return [d["id"] for d in (lst.get("documents") or []) if not d.get("deleted_at")]
-    raise ValueError(f"No folder matching '{list_id}'.")
+        if lst.get("id") == folder or (lst.get("title") or "").lower() == folder.lower():
+            return lst
+    raise ValueError(f"No folder matching '{folder}'.")

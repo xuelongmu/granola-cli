@@ -43,7 +43,10 @@ granola who <id>                                     # who has access (+ user_id
 granola share <id> --email a@b.com --name "A B"      # add collaborator
 granola unshare <id> --email a@b.com                 # revoke (no email sent)
 granola role <id> --user <user_id> --role viewer     # change role
-granola share-folder NeuroSense --email a@b.com --name "A B"   # cascade to all notes
+granola folder-who NeuroSense                         # who has folder-level access
+granola share-folder NeuroSense --email a@b.com       # folder ACL (existing users; inherited access)
+granola share-folder NeuroSense --email a@b.com --per-note   # invite + direct access on each note
+granola unshare-folder NeuroSense --email a@b.com     # revoke folder-level access
 
 # edit
 granola update <id> --title "New title"
