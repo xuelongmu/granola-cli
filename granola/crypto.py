@@ -7,10 +7,13 @@ Windows user (CurrentUser scope); everything above the access token is portable.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import os
+import subprocess
 import sys
 from ctypes import wintypes
 
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
@@ -55,3 +58,60 @@ def aes_gcm_encrypt(plaintext: bytes, key: bytes, iv_len: int = 12) -> bytes:
     """Produce `IV(12) + ciphertext + tag(16)`, matching Granola's `.enc` layout."""
     nonce = os.urandom(iv_len)
     return nonce + AESGCM(key).encrypt(nonce, plaintext, None)
+
+
+# --- macOS safeStorage (Keychain-backed) ---------------------------------------
+# On macOS, Granola's `storage.dek` is wrapped with Electron/Chromium safeStorage
+# (AES-128-CBC, key derived from a Keychain password) instead of Windows DPAPI.
+# Scheme + behavior verified against harperreed/muesli's session_decrypt.rs.
+
+KEYCHAIN_SERVICE = "Granola Safe Storage"
+KEYCHAIN_ACCOUNT = "Granola Key"
+_SAFE_STORAGE_SALT = b"saltysalt"
+_SAFE_STORAGE_ITERATIONS = 1003
+_SAFE_STORAGE_KEY_LEN = 16
+_SAFE_STORAGE_IV = b" " * 16
+
+
+def keychain_password(service: str = KEYCHAIN_SERVICE, account: str = KEYCHAIN_ACCOUNT) -> str:
+    """Read Granola's safeStorage key from the macOS login Keychain.
+
+    Shells out to ``/usr/bin/security`` (no extra deps). The first call may trigger
+    a Keychain access prompt unless this binary is already trusted for the item.
+    """
+    if sys.platform != "darwin":
+        raise RuntimeError("Keychain access is only available on macOS.")
+    try:
+        out = subprocess.run(
+            ["/usr/bin/security", "find-generic-password", "-s", service, "-a", account, "-w"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("`security` tool not found (macOS only).") from exc
+    if out.returncode != 0:
+        raise RuntimeError(
+            f"Keychain item '{service}'/'{account}' not found or access denied: "
+            f"{out.stderr.strip() or out.returncode}"
+        )
+    return out.stdout.strip("\n")
+
+
+def aes_128_cbc_safestorage_decrypt(blob: bytes, password: str, prefix: bytes = b"v10") -> bytes:
+    """Decrypt an Electron/Chromium safeStorage ``v10`` blob (macOS/Linux scheme).
+
+    Key = PBKDF2-HMAC-SHA1(password, "saltysalt", 1003, 16 bytes); AES-128-CBC with a
+    16-space IV and PKCS#7 padding. Used for ``storage.dek`` on macOS.
+    """
+    if blob[: len(prefix)] != prefix:
+        raise ValueError(f"safeStorage blob missing {prefix!r} prefix.")
+    ciphertext = blob[len(prefix):]
+    key = hashlib.pbkdf2_hmac(
+        "sha1", password.encode("utf-8"), _SAFE_STORAGE_SALT,
+        _SAFE_STORAGE_ITERATIONS, dklen=_SAFE_STORAGE_KEY_LEN,
+    )
+    dec = Cipher(algorithms.AES(key), modes.CBC(_SAFE_STORAGE_IV)).decryptor()
+    padded = dec.update(ciphertext) + dec.finalize()
+    pad = padded[-1] if padded else 0
+    if not 1 <= pad <= 16 or pad > len(padded):
+        raise ValueError("Bad PKCS#7 padding (wrong Keychain password?).")
+    return padded[:-pad]

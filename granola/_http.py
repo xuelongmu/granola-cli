@@ -30,14 +30,20 @@ def request(method: str, url: str, *, json_body=None, headers: dict | None = Non
 
 
 def granola_running() -> bool:
-    """Best-effort check whether the desktop app is running (Windows)."""
-    if sys.platform != "win32":
-        return False
+    """Best-effort check whether the desktop app is running (Windows/macOS)."""
     try:
-        out = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq Granola.exe", "/NH"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return "Granola.exe" in out.stdout
+        if sys.platform == "win32":
+            out = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq Granola.exe", "/NH"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return "Granola.exe" in out.stdout
+        if sys.platform == "darwin":
+            out = subprocess.run(
+                ["/usr/bin/pgrep", "-x", "Granola"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return out.returncode == 0 and bool(out.stdout.strip())
     except Exception:
         return False
+    return False
