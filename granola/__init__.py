@@ -1,4 +1,4 @@
-"""Granola — decrypt on-disk credentials, auto-refresh, read/share/edit notes, sync + search.
+"""Granola — decrypt on-disk credentials, auto-refresh, and drive the documented internal API.
 
 Quick start::
 
@@ -10,7 +10,7 @@ Quick start::
 """
 from __future__ import annotations
 
-from . import editing, notes, search, sharing, sync
+from . import editing, notes, sharing
 from .auth import get_access_token, refresh_account_token, token_info, token_is_expiring
 from .client import GranolaClient
 from .config import Config
@@ -35,6 +35,4 @@ __all__ = [
     "notes",
     "sharing",
     "editing",
-    "sync",
-    "search",
 ]

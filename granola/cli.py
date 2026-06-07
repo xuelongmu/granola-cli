@@ -1,26 +1,22 @@
-"""`granola` — one CLI for reading, sharing, editing, syncing and searching notes.
+"""`granola` — one CLI for the documented Granola API: credentials + notes + sharing + editing.
 
 Engine:   info | token | routes | call | export
 Read:     notes | get | meta | transcript | panels
 Share:    who | share | unshare | role | share-folder
 Edit:     update | delete
-Local:    sync | search
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from pathlib import Path
 
-from . import editing, notes, search, sharing, sync
+from . import editing, notes, sharing
 from .auth import get_access_token, token_info
 from .client import GranolaClient
 from .config import Config
 from .export import export_credentials
 from .routes import load_routes
-
-DEFAULT_DB = Path.home() / ".granola" / "notes.db"
 
 
 def _print(obj) -> None:
@@ -89,16 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
     pup.add_argument("id"); pup.add_argument("--title"); pup.add_argument("--markdown")
     pd = sub.add_parser("delete", help="PERMANENTLY hard-delete a note.")
     pd.add_argument("id"); pd.add_argument("--yes", action="store_true", help="Required: confirm.")
-
-    # --- local ---
-    psy = sub.add_parser("sync", help="Sync notes into local SQLite (+ optional markdown).")
-    psy.add_argument("--db", default=str(DEFAULT_DB)); psy.add_argument("--out")
-    psy.add_argument("--limit", type=int, default=200)
-    psy.add_argument("--no-transcript", action="store_true")
-    psy.add_argument("--force", action="store_true")
-    pse = sub.add_parser("search", help="Full-text search the synced store.")
-    pse.add_argument("query"); pse.add_argument("--db", default=str(DEFAULT_DB))
-    pse.add_argument("--limit", type=int, default=20)
     return p
 
 
@@ -180,17 +166,6 @@ def main(argv=None) -> int:  # noqa: C901 - flat dispatch is clearer than abstra
             print("refusing to hard-delete without --yes (this is permanent)", file=sys.stderr); return 2
         _print(editing.delete_note(client, args.id))
 
-    # local
-    elif c == "sync":
-        _print(sync.sync(client, args.db, limit=args.limit,
-                         with_transcript=not args.no_transcript, out_dir=args.out, force=args.force))
-    elif c == "search":
-        hits = search.search(args.db, args.query, limit=args.limit)
-        for h in hits:
-            print(f"{h['uuid']}  {h.get('title') or '(untitled)'}")
-            if h.get("snippet"):
-                print(f"    {h['snippet']}")
-        print(f"{len(hits)} matches", file=sys.stderr)
     return 0
 
 
