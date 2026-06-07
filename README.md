@@ -1,5 +1,7 @@
 # granola
 
+[![PyPI](https://img.shields.io/pypi/v/granola-cli)](https://pypi.org/project/granola-cli/)
+
 One CLI for [Granola](https://granola.ai) on **Windows & macOS** — using Granola's own
 on-disk session, no API key, no password prompt. It covers two things:
 
@@ -15,12 +17,14 @@ on-disk session, no API key, no password prompt. It covers two things:
 
 ## Install
 
-```powershell
-uv tool install .          # or: pipx install .
+```bash
+pip install granola-cli         # or: uv tool install granola-cli / pipx install granola-cli
 granola auth status
 ```
 
 Requires Python ≥ 3.10. Dependencies: `httpx`, `cryptography`.
+
+To install from a checkout instead (development): `uv tool install .` (or `pipx install .`).
 
 ## Usage
 
