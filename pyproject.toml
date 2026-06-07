@@ -5,12 +5,12 @@ description = "One CLI for Granola: decrypt on-disk creds and drive the document
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Xuelong Mu" }]
+authors = [{ name = "Granola CLI contributors" }]
 keywords = ["granola", "meeting-notes", "cli", "transcripts"]
 dependencies = ["httpx>=0.27", "cryptography>=42"]
 
 [project.urls]
-Homepage = "https://github.com/xuelongmu/granola-cli"
+Homepage = "https://github.com/example/granola-cli"
 
 [project.scripts]
 granola = "granola.cli:main"

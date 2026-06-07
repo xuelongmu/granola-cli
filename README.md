@@ -41,13 +41,13 @@ granola panels <id>                  # AI summary panels
 
 # share / access
 granola who <id>                                     # who has access (+ user_ids)
-granola share <id> --email a@b.com --name "A B"      # add collaborator
-granola unshare <id> --email a@b.com                 # revoke (no email sent)
+granola share <id> --email teammate@example.com --name "Teammate"  # add collaborator
+granola unshare <id> --email teammate@example.com                  # revoke (no email sent)
 granola role <id> --user <user_id> --role viewer     # change role
-granola folder-who NeuroSense                         # who has folder-level access
-granola share-folder NeuroSense --email a@b.com       # folder ACL (existing users; inherited access)
-granola share-folder NeuroSense --email a@b.com --per-note   # invite + direct access on each note
-granola unshare-folder NeuroSense --email a@b.com     # revoke folder-level access
+granola folder-who "Team Notes"                       # who has folder-level access
+granola share-folder "Team Notes" --email teammate@example.com       # folder ACL (existing users; inherited access)
+granola share-folder "Team Notes" --email teammate@example.com --per-note   # invite + direct access on each note
+granola unshare-folder "Team Notes" --email teammate@example.com     # revoke folder-level access
 
 # edit
 granola update <id> --title "New title"
@@ -56,19 +56,8 @@ granola delete <id> --yes            # PERMANENT hard delete
 
 Roles: `owner` · `collaborator` · `viewer`.
 
-## Verified API gotchas (baked into the typed verbs)
-
-These cost real debugging time and are why the typed verbs exist — so you don't hit them:
-
-- **`share`** → `add-users-to-document` wants `names` as an **`{email: name}` object map**,
-  not an array (an array makes the server `500`).
-- **`update`** → `update-document` keys the note as **`id`**, not `document_id`
-  (sending `document_id` returns `400 "Missing document ID"`).
-- **`get`** → the full single-note record comes from `get-documents-batch`
-  (`{document_ids: [...]}`), not a singular `get-document`.
-
-Full request/response shapes are documented in `docs/granola-api.md` in the companion
-credential-decrypt research repo.
+See [`docs/api-gotchas.md`](docs/api-gotchas.md) for endpoint quirks baked into the
+typed verbs.
 
 ## Platforms
 
@@ -85,10 +74,6 @@ the **first** run may show a Keychain access prompt for the `Granola Safe Storag
 allow it. The macOS crypto is verified against
 [harperreed/muesli](https://github.com/harperreed/muesli)'s known-good vectors
 (`tests/test_macos_crypto.py`).
-
-The macOS path is not just theoretical: `granola --no-refresh info`,
-`granola --no-refresh token`, and a live `granola --no-refresh notes --limit 1`
-smoke test have been verified against a local Granola profile on macOS.
 
 ## Layout
 

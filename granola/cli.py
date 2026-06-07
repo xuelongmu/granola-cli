@@ -74,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     prole.add_argument("id"); prole.add_argument("--user", required=True, help="user_id (from `who`).")
     prole.add_argument("--role", required=True)
     pf = sub.add_parser("share-folder", help="Share a folder with someone (folder-level access).")
-    pf.add_argument("folder", help="Folder id or name (e.g. NeuroSense).")
+    pf.add_argument("folder", help='Folder id or name (e.g. "Team Notes").')
     pf.add_argument("--email", required=True); pf.add_argument("--name")
     pf.add_argument("--role", default="collaborator")
     pf.add_argument("--per-note", action="store_true",
