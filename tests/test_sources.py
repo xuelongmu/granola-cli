@@ -14,12 +14,13 @@ import os
 import stat
 import sys
 import time
+from pathlib import Path
 
 import httpx
 import pytest
 
 from granola import auth, sources
-from granola.auth import RefreshRevoked, refresh_exchange, token_is_expiring
+from granola.auth import RefreshRevoked, refresh_exchange
 from granola.config import Config
 from granola.sources import (
     DesktopStoreSource,
@@ -277,7 +278,7 @@ def test_resolve_prefers_session_over_static_and_warns(monkeypatch, capsys):
 def test_resolve_flag_beats_env_within_kind(monkeypatch):
     monkeypatch.setenv("GRANOLA_SESSION", "/tmp/env.json")
     s = resolve_source(Config(), session="/tmp/flag.json")
-    assert isinstance(s, SessionFileSource) and str(s.path) == "/tmp/flag.json"
+    assert isinstance(s, SessionFileSource) and Path(s.path) == Path("/tmp/flag.json")
 
 
 def test_resolve_email_with_session_errors():
