@@ -8,7 +8,6 @@ how to reason about a token dict.
 """
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime, timezone
 

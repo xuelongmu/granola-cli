@@ -83,18 +83,23 @@ def build_parser() -> argparse.ArgumentParser:
     pw = sub.add_parser("who", help="Who has access to a note.")
     pw.add_argument("id")
     ps = sub.add_parser("share", help="Add a collaborator to a note.")
-    ps.add_argument("id"); ps.add_argument("--email", required=True)
-    ps.add_argument("--name"); ps.add_argument("--role", default="collaborator")
+    ps.add_argument("id")
+    ps.add_argument("--email", required=True)
+    ps.add_argument("--name")
+    ps.add_argument("--role", default="collaborator")
     pu = sub.add_parser("unshare", help="Remove a collaborator from a note.")
-    pu.add_argument("id"); pu.add_argument("--email", required=True)
+    pu.add_argument("id")
+    pu.add_argument("--email", required=True)
     pu.add_argument("--cleanup-list", action="append", default=[],
                     help="Also strip inherited access from this folder id (repeatable).")
     prole = sub.add_parser("role", help="Change a collaborator's role.")
-    prole.add_argument("id"); prole.add_argument("--user", required=True, help="user_id (from `who`).")
+    prole.add_argument("id")
+    prole.add_argument("--user", required=True, help="user_id (from `who`).")
     prole.add_argument("--role", required=True)
     pf = sub.add_parser("share-folder", help="Share a folder with someone (folder-level access).")
     pf.add_argument("folder", help='Folder id or name (e.g. "Team Notes").')
-    pf.add_argument("--email", required=True); pf.add_argument("--name")
+    pf.add_argument("--email", required=True)
+    pf.add_argument("--name")
     pf.add_argument("--role", default="collaborator")
     pf.add_argument("--per-note", action="store_true",
                     help="Add to each note directly (invites non-Granola emails; vs one-call folder ACL).")
@@ -103,13 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
     pfw = sub.add_parser("folder-who", help="Who has access to a folder.")
     pfw.add_argument("folder")
     puf = sub.add_parser("unshare-folder", help="Revoke a person's folder-level access.")
-    puf.add_argument("folder"); puf.add_argument("--email", required=True)
+    puf.add_argument("folder")
+    puf.add_argument("--email", required=True)
 
     # --- edit ---
     pup = sub.add_parser("update", help="Partial-edit a note (title/markdown).")
-    pup.add_argument("id"); pup.add_argument("--title"); pup.add_argument("--markdown")
+    pup.add_argument("id")
+    pup.add_argument("--title")
+    pup.add_argument("--markdown")
     pd = sub.add_parser("delete", help="PERMANENTLY hard-delete a note.")
-    pd.add_argument("id"); pd.add_argument("--yes", action="store_true", help="Required: confirm.")
+    pd.add_argument("id")
+    pd.add_argument("--yes", action="store_true", help="Required: confirm.")
     return p
 
 
@@ -172,7 +181,8 @@ def main(argv=None) -> int:  # noqa: C901 - flat dispatch is clearer than abstra
     elif c == "get":
         rec = notes.get_note(client, args.id)
         if not rec:
-            print("note not found", file=sys.stderr); return 1
+            print("note not found", file=sys.stderr)
+            return 1
         if args.json:
             _print(rec)
         else:
@@ -211,11 +221,13 @@ def main(argv=None) -> int:  # noqa: C901 - flat dispatch is clearer than abstra
     elif c == "update":
         fields = {k: v for k, v in (("title", args.title), ("notes_markdown", args.markdown)) if v is not None}
         if not fields:
-            print("nothing to update (pass --title and/or --markdown)", file=sys.stderr); return 2
+            print("nothing to update (pass --title and/or --markdown)", file=sys.stderr)
+            return 2
         _print(editing.update_note(client, args.id, **fields))
     elif c == "delete":
         if not args.yes:
-            print("refusing to hard-delete without --yes (this is permanent)", file=sys.stderr); return 2
+            print("refusing to hard-delete without --yes (this is permanent)", file=sys.stderr)
+            return 2
         _print(editing.delete_note(client, args.id))
 
     return 0
