@@ -36,7 +36,7 @@ from .sources import (
 )
 from .store import get_dek, read_store, save_store
 
-__version__ = "0.1.0"
+__version__ = "0.0.1"
 __all__ = [
     "Config",
     "GranolaClient",
