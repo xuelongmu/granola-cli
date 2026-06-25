@@ -1,4 +1,4 @@
-# granola
+# granola-cli
 
 [![PyPI](https://img.shields.io/pypi/v/granola-cli)](https://pypi.org/project/granola-cli/)
 
